@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>My CSS experiment</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<audio id="bgm" autoplay loop hidden></audio>
+
+<div id="Player-Box"></div>
+<div id="Bullet"></div>
+<div id="Big-Boss"></div>
+<div id="Bots"></div>
+<div id="scoreBoard">Score: 0</div>
+
+<div id="ui-controls">
+  <button class="ctrl" id="btn-up">▲</button><br>
+  <button class="ctrl" id="btn-left">◀</button>
+  <button class="ctrl" id="btn-down">▼</button>
+  <button class="ctrl" id="btn-right">▶</button><br>
+  <button class="ctrl shoot" id="btn-shoot">Z 🔫</button>
+</div>
+
+<style>
+  body { background: rgb(255, 255, 255); overflow: hidden; }
+  #Player-Box {
+    position: absolute;
+    background-image: url("Reimu%20Hakurei.png");
+    background-position-x: -0.8cm;
+    background-position-y: -0.6cm;
+    background-size: 45cm;
+    width: 70px;
+    height: 130px;
+    z-index: 3;
+  }
+
+#Big-Boss { 
+  position: absolute; 
+  background-image: url("น้องบีตีกลอง.png"); 
+   background-size: 5cm; 
+   background-repeat: no-repeat; 
+   width: 200px; height: 200px; 
+   top: 100px; 
+   left: 500px; 
+   z-index: 2; 
+  }
+
+  #Bullet, .enemyBullet { 
+    position: absolute; width: 30px; height: 30px; z-index: 2; 
+  }
+  .enemyBullet { 
+    background: radial-gradient(circle, red 40%, darkred 90%); border-radius: 50%;
+  }
+  #Bullet {
+    position: absolute;
+    background-image: url("Reimu%20Hakurei.png");
+    background-position-x: -0.4cm;
+    background-position-y: -7.1cm;
+    background-size: 30cm;
+    transform: rotate(-90deg);
+    width: 30px;
+    height: 30px;
+    visibility: hidden;
+    z-index: 2;
+  }
+
+  #scoreBoard {
+    position: absolute;
+    top: 10px;
+    left: 1000px;
+    font-size: 24px;
+    font-weight: bold;
+    color: rgb(255, 0, 0);
+    background: rgba(0,0,0,0.5);
+    padding: 8px 12px;
+    border-radius: 8px;
+  }
+
+  #ui-controls {
+    position: fixed;
+    bottom: 40px;
+    left: 40px;
+    text-align: center;
+    z-index: 999;
+  }
+  .ctrl {
+    background: rgba(0,0,0,0.7);
+    color: white;
+    font-size: 20px;
+    width: 60px;
+    height: 60px;
+    margin: 5px;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+  }
+  .ctrl:active {
+    background: rgba(255, 0, 0, 0.8);
+  }
+  .shoot {
+    background: rgba(0, 100, 255, 0.7);
+  }
+</style>
+<script>
+let score = parseInt(localStorage.getItem("score")) || 0;
+let highScore = parseInt(localStorage.getItem("highScore")) || 0;
+
+const myBox = document.getElementById("Player-Box");
+const myBullet= document.getElementById("Bullet");
+const boxBoss= document.getElementById("Big-Boss");
+const scoreBoard = document.getElementById("scoreBoard");
+
+let X = 700, Y = 600;
+let bgX = -0.8, bgY = -0.6;
+let shooting = false, shootInterval;
+let bossDir = 3;
+let bossSpeed = 1;
+let spinAngle = 0;
+let count = 0;
+const step = -2.21;
+const maxSteps = 8;
+let spinSpeed = 15;
+let isBossShooting = false;
+let gameOver = false;
+const moveAmount = 5;
+const keysPressed = {};
+
+const limit = {
+  minX: 0,
+  minY: 0,
+  maxX: window.innerWidth - myBox.offsetWidth,
+  maxY: window.innerHeight - myBox.offsetHeight
+};
+
+scoreBoard.textContent = `Score: ${score} | High: ${highScore}`;
+
+function saveScore() {
+  if (score > highScore) {
+    highScore = score;
+    localStorage.setItem("highScore", highScore);
+  }
+}
+
+function showGameOver() {
+  gameOver = true;
+  document.querySelectorAll(".enemyBullet").forEach(b => b.remove());
+  clearInterval(shootInterval);
+
+  const overlay = document.createElement("div");
+  overlay.id = "gameOverScreen";
+  overlay.innerHTML = `
+    <div class="game-over-box">
+      <h1>กาก</h1>
+      <button id="resetBtn">เล่นใหม่</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  document.getElementById("resetBtn").onclick = () => resetGame();
+}
+
+function resetGame() {
+  document.getElementById("gameOverScreen").remove();
+  score = 0;
+  saveScore();
+  scoreBoard.textContent = `Score: ${score} | High: ${highScore}`;
+  myBox.style.top = "600px";
+  myBox.style.left = "700px";
+  X = 700; 
+  Y = 600;
+  gameOver = false;
+
+  updatePosition();
+  moveBoss();
+}
+function updatePosition() {
+    if (gameOver) return;
+
+  myBox.style.backgroundPositionY = bgY + "cm";
+
+  if (keysPressed["KeyW"]) Y -= moveAmount, bgY = -0.6;
+  if (keysPressed["KeyS"]) Y += moveAmount, bgY = -0.6;
+  if (keysPressed["KeyA"]) X -= moveAmount, bgY = -4;
+  if (keysPressed["KeyD"]) X += moveAmount, bgY = -7.3;
+
+  X = Math.max(limit.minX, Math.min(limit.maxX, X));
+  Y = Math.max(limit.minY, Math.min(limit.maxY, Y));
+
+  myBox.style.top = Y + "px";
+  myBox.style.left = X + "px";
+  requestAnimationFrame(updatePosition);
+}
+
+function fireBullet() {
+  if (gameOver) return;
+  const bullet = myBullet.cloneNode(true);
+   bullet.style.visibility = "visible";
+
+  bullet.style.display = "block";
+  bullet.style.left = (X + myBox.offsetWidth / 2 - bullet.offsetWidth / 2) + "px";
+  bullet.style.top = (Y - bullet.offsetHeight) + "px";
+  document.body.appendChild(bullet);
+
+  function moveBullet() {
+    let top = parseInt(bullet.style.top);
+    top -= 10;
+    bullet.style.top = top + "px";
+
+    const bossRect = boxBoss.getBoundingClientRect();
+    const bulletRect = bullet.getBoundingClientRect();
+
+    if (
+      bulletRect.left < bossRect.right &&
+      bulletRect.right > bossRect.left &&
+      bulletRect.top < bossRect.bottom &&
+      bulletRect.bottom > bossRect.top
+    ) {
+      bullet.remove();
+      score++;
+      saveScore();
+      scoreBoard.textContent = `Score: ${score} | High: ${highScore}`;
+      return;
+    }
+
+    if (top < 0) bullet.remove();
+    else requestAnimationFrame(moveBullet);
+  }
+
+  moveBullet();
+}
+
+function animateBackgroundX() {
+  myBox.style.backgroundPositionX = bgX + "cm";
+  count++;
+  if (count >= maxSteps) {
+    bgX = -0.8;
+    count = 0;
+  } else {
+    bgX += step;
+  }
+  setTimeout(animateBackgroundX, 100);
+}
+
+function moveBoss() {
+  if (gameOver) return;
+  if (!isBossShooting) {
+    let bossX = parseInt(boxBoss.style.left || 500);
+    bossX += bossDir * bossSpeed;
+    if (bossX <= 0 || bossX >= window.innerWidth - boxBoss.offsetWidth) {
+      bossDir *= -1;
+    }
+    boxBoss.style.left = bossX + "px";
+  }
+  requestAnimationFrame(moveBoss);
+}
+
+function bossFireBulletHell() {
+  if (gameOver) return;
+  isBossShooting = true;
+
+  const bossRect = boxBoss.getBoundingClientRect();
+  const bulletCount = 12;
+  const centerX = bossRect.left + bossRect.width / 2;
+  const centerY = bossRect.top + bossRect.height / 2;
+  const speed = 2;
+  let bulletsFinished = 0;
+
+  for (let i = 0; i < bulletCount; i++) {
+    const angle = (i / bulletCount) * 2 * Math.PI;
+    const enemyBullet = document.createElement("div");
+    enemyBullet.classList.add("enemyBullet");
+    enemyBullet.style.left = centerX + "px";
+    enemyBullet.style.top = centerY + "px";
+    document.body.appendChild(enemyBullet);
+
+    function moveBulletHell() {
+      if (gameOver) { enemyBullet.remove(); return; }
+      const top = parseFloat(enemyBullet.style.top);
+      const left = parseFloat(enemyBullet.style.left);
+      enemyBullet.style.top = top + Math.sin(angle) * speed + "px";
+      enemyBullet.style.left = left + Math.cos(angle) * speed + "px";
+
+      const playerRect = myBox.getBoundingClientRect();
+      const bulletRect = enemyBullet.getBoundingClientRect();
+
+      if (
+        bulletRect.left < playerRect.right &&
+        bulletRect.right > playerRect.left &&
+        bulletRect.top < playerRect.bottom &&
+        bulletRect.bottom > playerRect.top
+      ) {
+        enemyBullet.remove();
+        showGameOver();
+        return;
+      }
+
+      if (
+        top < -50 || top > window.innerHeight + 50 ||
+        left < -50 || left > window.innerWidth + 50
+      ) {
+        enemyBullet.remove();
+        bulletsFinished++;
+        if (bulletsFinished >= bulletCount) {
+          isBossShooting = false;
+        }
+      } else {
+        requestAnimationFrame(moveBulletHell);
+      }
+    }
+    moveBulletHell();
+  }
+}
+setInterval(bossFireBulletHell, 900);
+
+function bossFireSpin() {
+  if (gameOver) return;
+  isBossShooting = true;
+
+  const bossRect = boxBoss.getBoundingClientRect();
+  const centerX = bossRect.left + bossRect.width / 2;
+  const centerY = bossRect.top + bossRect.height / 2;
+  const speed = 5;
+  const angle = spinAngle * (Math.PI / 180);
+  const enemyBullet = document.createElement("div");
+  enemyBullet.classList.add("enemyBullet");
+  enemyBullet.style.left = centerX + "px";
+  enemyBullet.style.top = centerY + "px";
+  document.body.appendChild(enemyBullet);
+
+  function moveSpinBullet() {
+    if (gameOver) { enemyBullet.remove(); return; }
+    let top = parseFloat(enemyBullet.style.top);
+    let left = parseFloat(enemyBullet.style.left);
+    enemyBullet.style.top = top + Math.sin(angle) * speed + "px";
+    enemyBullet.style.left = left + Math.cos(angle) * speed + "px";
+
+    const playerRect = myBox.getBoundingClientRect();
+    const bulletRect = enemyBullet.getBoundingClientRect();
+
+    if (
+      bulletRect.left < playerRect.right &&
+      bulletRect.right > playerRect.left &&
+      bulletRect.top < playerRect.bottom &&
+      bulletRect.bottom > playerRect.top
+    ) {
+      enemyBullet.remove();
+      showGameOver();
+      return;
+    }
+
+    if (top < -50 || top > window.innerHeight + 50 ||
+        left < -50 || left > window.innerWidth + 50) {
+      enemyBullet.remove();
+      isBossShooting = false;
+    } else {
+      requestAnimationFrame(moveSpinBullet);
+    }
+  }
+  moveSpinBullet();
+  spinAngle += spinSpeed;
+  if (spinAngle >= 360) spinAngle -= 360;
+}
+
+document.addEventListener("keydown", (event) => {
+  keysPressed[event.code] = true;
+  if (event.code === "KeyZ" && !shooting && !gameOver) {
+    shooting = true;
+    fireBullet();
+    shootInterval = setInterval(fireBullet, 100);
+  }
+});
+document.addEventListener("keyup", (event) => {
+  keysPressed[event.code] = false;
+  if (event.code === "KeyZ") {
+    shooting = false;
+    clearInterval(shootInterval);
+  }
+});
+
+document.getElementById("btn-up").onmousedown = () => keysPressed["KeyW"] = true;
+document.getElementById("btn-down").onmousedown = () => keysPressed["KeyS"] = true;
+document.getElementById("btn-left").onmousedown = () => keysPressed["KeyA"] = true;
+document.getElementById("btn-right").onmousedown = () => keysPressed["KeyD"] = true;
+document.getElementById("btn-shoot").onmousedown = () => {
+  if (!shooting && !gameOver) {
+    shooting = true;
+    fireBullet();
+    shootInterval = setInterval(fireBullet, 100);
+  }
+};
+document.querySelectorAll(".ctrl").forEach(btn => {
+  btn.onmouseup = btn.ontouchend = () => {
+    keysPressed["KeyW"] = false;
+    keysPressed["KeyS"] = false;
+    keysPressed["KeyA"] = false;
+    keysPressed["KeyD"] = false;
+    shooting = false;
+    clearInterval(shootInterval);
+  };
+});
+
+updatePosition();
+moveBoss();
+animateBackgroundX()
+</script>
+</body>
+</html>
